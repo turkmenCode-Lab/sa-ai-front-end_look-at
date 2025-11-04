@@ -1,4 +1,39 @@
-/* App.css (default, cleaned up) */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Regular.woff2") format("woff2"),
+    url("/fonts/Inter-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Medium.woff2") format("woff2"),
+    url("/fonts/Inter-Medium.woff") format("woff");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Semibold.woff2") format("woff2"),
+    url("/fonts/Inter-Semibold.woff") format("woff");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Bold.woff2") format("woff2"),
+    url("/fonts/Inter-Bold.woff") format("woff");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -56,6 +91,27 @@ body.accent-principally {
 .app * {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.app {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    "Oxygen", "Ubuntu", "Cantarell", sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+}
+
+strong,
+b {
+  font-weight: 700;
+}
+
+button,
+input {
+  font-family: inherit;
 }
 
 .app::-webkit-scrollbar,
@@ -1422,4 +1478,65 @@ select:focus {
     width: 20px;
     height: 20px;
   }
+}
+
+.markdown-p {
+  margin: 0 0 0.75em 0;
+  line-height: 1.4;
+}
+
+.markdown-code {
+  background-color: var(--bg-tertiary);
+  padding: 0.1em 0.2em;
+  border-radius: 4px;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  font-size: 0.95em;
+}
+
+.markdown-pre {
+  background-color: var(--bg-secondary);
+  padding: 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.25em 0;
+}
+
+.markdown-pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-blockquote {
+  border-left: 4px solid var(--accent-color);
+  margin: 0.25em 0;
+  padding-left: 0.25em;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.markdown-ul,
+.markdown-ol {
+  padding-left: 0.5em;
+  margin: 0.15em 0;
+}
+
+.markdown-li {
+  margin: 0;
+}
+
+.markdown-strong {
+  font-weight: 600;
+}
+
+.markdown-em {
+  font-style: italic;
+}
+
+.markdown-a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.markdown-a:hover {
+  text-decoration: underline;
 }
