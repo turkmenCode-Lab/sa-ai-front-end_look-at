@@ -15,9 +15,7 @@ import Toast from "./components/Toast";
 import { useLanguageStore } from "./store/languageStore";
 import { useThemeStore } from "./store/themeStore";
 import "./App.css";
-
 const API_BASE = "https://api.merdannotfound.ru/api";
-
 function AppContent() {
   const queryClient = useQueryClient();
   const { t, i18n } = useTranslation();
@@ -38,10 +36,13 @@ function AppContent() {
   const [isMobile, setIsMobile] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [editingChatId, setEditingChatId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [chatToDelete, setChatToDelete] = useState(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const token = localStorage.getItem("token");
-
   const getHeaders = () => {
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -49,7 +50,6 @@ function AppContent() {
     };
     return headers;
   };
-
   const { data: allChats = [] } = useQuery({
     queryKey: ["chats"],
     queryFn: () =>
@@ -69,7 +69,6 @@ function AppContent() {
       });
     },
   });
-
   const { data: currentChat } = useQuery({
     queryKey: ["chat", currentChatId],
     queryFn: () =>
@@ -87,7 +86,6 @@ function AppContent() {
       if (err.message.includes("401")) handleLogout();
     },
   });
-
   const displayMessages = useMemo(() => {
     return (
       currentChat?.messages?.map((msg, index) => ({
@@ -98,7 +96,6 @@ function AppContent() {
       })) || []
     );
   }, [currentChat]);
-
   const createMutation = useMutation({
     mutationFn: (body) =>
       fetch(`${API_BASE}/chat`, {
@@ -125,10 +122,9 @@ function AppContent() {
       });
     },
   });
-
-  const updateMutation = useMutation({
-    mutationFn: (body) =>
-      fetch(`${API_BASE}/chat/${currentChatId}`, {
+  const updateChatMutation = useMutation({
+    mutationFn: ({ chatId, body }) =>
+      fetch(`${API_BASE}/chat/${chatId}`, {
         method: "PUT",
         headers: getHeaders(),
         body: JSON.stringify(body),
@@ -136,14 +132,59 @@ function AppContent() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["chat", currentChatId] });
+    onSuccess: (_, { chatId }) => {
+      queryClient.invalidateQueries({ queryKey: ["chats"] });
+      if (chatId === currentChatId) {
+        queryClient.invalidateQueries({ queryKey: ["chat", currentChatId] });
+      }
+      setEditingChatId(null);
+      setToast({
+        message: t("title-updated") || "Title updated",
+        type: "success",
+      });
     },
     onError: (err) => {
       if (err.message.includes("401")) handleLogout();
+      setToast({
+        message: `Update failed: ${err.message}`,
+        type: "error",
+      });
     },
   });
-
+  const deleteMutation = useMutation({
+    mutationFn: (chatId) => {
+      console.log('Fetching DELETE for chat:', chatId, 'URL:', `${API_BASE}/chat/${chatId}`);
+      return fetch(`${API_BASE}/chat/${chatId}`, {
+        method: "DELETE",
+        headers: getHeaders(),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+        return r;
+      });
+    },
+    onSuccess: (_, chatId) => {
+      console.log('Delete success for chat:', chatId);
+      queryClient.invalidateQueries({ queryKey: ["chats"] });
+      if (currentChatId === chatId) {
+        setCurrentChatId(null);
+        setInput("");
+      }
+      setToast({
+        message: t("chat-deleted") || "Chat deleted",
+        type: "info",
+      });
+      setShowDeleteModal(false);
+      setChatToDelete(null);
+    },
+    onError: (err) => {
+      console.error('Delete error:', err);
+      if (err.message.includes("401")) handleLogout();
+      setToast({
+        message: t("delete-failed") || `Delete failed: ${err.message}`,
+        type: "error",
+      });
+    },
+  });
   const sendMutation = useMutation({
     mutationFn: (content) =>
       fetch(`${API_BASE}/chat/${currentChatId}/message`, {
@@ -177,21 +218,15 @@ function AppContent() {
     onSuccess: () => {
       setInput("");
       setIsTyping(false);
-      setToast({
-        message: t("message-sent") || "Message sent",
-        type: "success",
-      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["chat", currentChatId] });
     },
   });
-
   const handleLanguageChange = (newLang) => {
     i18n.changeLanguage(newLang);
     setLanguage(newLang);
   };
-
   const currentTitle = useMemo(() => {
     if (!currentChatId) return "SA-AI";
     if (currentChat?.title && currentChat.title !== "New Chat")
@@ -204,7 +239,6 @@ function AppContent() {
     }
     return t("untitled") || "Untitled";
   }, [currentChat, displayMessages, currentChatId, t]);
-
   useEffect(() => {
     const savedUserStr = localStorage.getItem("currentUser");
     const savedToken = localStorage.getItem("token");
@@ -222,7 +256,6 @@ function AppContent() {
       }
     }
   }, []);
-
   useEffect(() => {
     if (user && allChats.length > 0 && !currentChatId) {
       setCurrentChatId(allChats[allChats.length - 1]._id);
@@ -230,7 +263,6 @@ function AppContent() {
       createMutation.mutate({ title: "", messages: [] });
     }
   }, [user, allChats.length, currentChatId, createMutation]);
-
   useEffect(() => {
     if (
       currentChat &&
@@ -241,10 +273,12 @@ function AppContent() {
       const newTitle =
         displayMessages[0].text.substring(0, 50) +
         (displayMessages[0].text.length > 50 ? "..." : "");
-      updateMutation.mutate({ title: newTitle });
+      updateChatMutation.mutate({
+        chatId: currentChatId,
+        body: { title: newTitle },
+      });
     }
-  }, [displayMessages.length, currentChat?.title, updateMutation]);
-
+  }, [displayMessages.length, currentChat?.title, updateChatMutation, currentChatId]);
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleThemeChange = (e) => {
@@ -254,9 +288,8 @@ function AppContent() {
       mediaQuery.addEventListener("change", handleThemeChange);
     } else {
       mediaQuery.addListener(handleThemeChange);
-    }
+    };
     handleThemeChange(mediaQuery);
-
     return () => {
       if (mediaQuery.removeEventListener) {
         mediaQuery.removeEventListener("change", handleThemeChange);
@@ -265,11 +298,9 @@ function AppContent() {
       }
     };
   }, [setTheme]);
-
   useEffect(() => {
     document.body.className = `${theme} accent-${accentColor}`;
   }, [theme, accentColor]);
-
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth <= 768;
@@ -284,7 +315,6 @@ function AppContent() {
       window.removeEventListener("orientationchange", checkMobile);
     };
   }, []);
-
   useEffect(() => {
     if (isMobile && sidebarOpen) {
       document.body.style.overflow = "hidden";
@@ -295,16 +325,13 @@ function AppContent() {
       document.body.style.overflow = "unset";
     };
   }, [isMobile, sidebarOpen]);
-
   useEffect(() => {
     scrollToBottom();
     adjustTextareaHeight();
   }, [displayMessages, isTyping, input]);
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
-
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -312,15 +339,12 @@ function AppContent() {
       textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
     }
   };
-
   const handleLogin = (user) => {
     setUser(user);
   };
-
   const handleSignup = (user) => {
     setUser(user);
   };
-
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     localStorage.removeItem("token");
@@ -331,7 +355,6 @@ function AppContent() {
     setShowSettings(false);
     queryClient.clear();
   };
-
   const handleNewChat = () => {
     if (!token) {
       setToast({ message: "Please log in first", type: "error" });
@@ -347,11 +370,10 @@ function AppContent() {
       }
     );
   };
-
   const handleClearChat = () => {
     if (currentChatId) {
-      updateMutation.mutate(
-        { messages: [] },
+      updateChatMutation.mutate(
+        { chatId: currentChatId, body: { messages: [] } },
         {
           onSuccess: () => {
             setInput("");
@@ -364,19 +386,15 @@ function AppContent() {
       );
     }
   };
-
   const handleSettings = () => {
     setShowSettings(true);
   };
-
   const handleThemeToggle = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
-
   const handleAccentChange = (newAccent) => {
     setAccentColor(newAccent);
   };
-
   const handleSend = () => {
     if (!input.trim() || isTyping || !token) {
       if (!token) setToast({ message: "Please log in", type: "error" });
@@ -396,14 +414,25 @@ function AppContent() {
       sendMutation.mutate(input);
     }
   };
-
   const handleKeyPress = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
-
+  const handleOpenDeleteModal = (chatId) => {
+    setChatToDelete(chatId);
+    setShowDeleteModal(true);
+  };
+  const handleConfirmDelete = () => {
+    if (chatToDelete) {
+      deleteMutation.mutate(chatToDelete);
+    }
+  };
+  const handleCancelDelete = () => {
+    setShowDeleteModal(false);
+    setChatToDelete(null);
+  };
   const suggestions = t("suggestions");
   const safeSuggestions = Array.isArray(suggestions)
     ? suggestions
@@ -412,7 +441,6 @@ function AppContent() {
         { text: "Explain quantum computing", icon: "news" },
         { text: "Help me write code", icon: "personas" },
       ];
-
   const filteredChats = useMemo(() => {
     if (!searchQuery.trim()) return allChats;
     return allChats.filter((chat) => {
@@ -427,7 +455,6 @@ function AppContent() {
       return titleMatch || previewMatch;
     });
   }, [allChats, searchQuery]);
-
   if (!user) {
     if (authMode === "login") {
       return (
@@ -449,9 +476,7 @@ function AppContent() {
       );
     }
   }
-
   const headerTitle = !currentChatId ? "SA-AI" : currentTitle;
-
   const markdownComponents = {
     p: ({ children }) => <p className="markdown-p">{children}</p>,
     code: ({ children, className }) => (
@@ -479,7 +504,6 @@ function AppContent() {
       </a>
     ),
   };
-
   if (showSettings) {
     return (
       <div className={`app ${theme} accent-${accentColor}`}>
@@ -686,9 +710,7 @@ function AppContent() {
       </div>
     );
   }
-
   const userInitial = user?.name?.charAt(0).toUpperCase() || "U";
-
   return (
     <div className={`app ${theme} accent-${accentColor}`}>
       <aside
@@ -868,30 +890,133 @@ function AppContent() {
                 filteredChats
                   .slice()
                   .reverse()
-                  .map((chat) => (
-                    <button
-                      key={chat._id}
-                      className={`chat-item ${
-                        chat._id === currentChatId ? "active" : ""
-                      }`}
-                      onClick={() => {
-                        setCurrentChatId(chat._id);
-                        if (isMobile) setShowChatList(false);
-                      }}
-                    >
-                      <div className="chat-title">
-                        {chat.title || t("untitled") || "Untitled"}
-                      </div>
-                      {chat.messages.length > 0 && (
-                        <div className="chat-preview">
-                          {chat.messages[
-                            chat.messages.length - 1
-                          ].content.substring(0, 50)}
-                          ...
+                  .map((chat) => {
+                    const isEditing = editingChatId === chat._id;
+                    const chatTitle = chat.title || t("untitled") || "Untitled";
+                    return (
+                      <div
+                        key={chat._id}
+                        className={`chat-item-wrapper ${
+                          chat._id === currentChatId ? "active" : ""
+                        }`}
+                      >
+                        <button
+                          className="chat-item"
+                          onClick={() => {
+                            setCurrentChatId(chat._id);
+                            if (isMobile) setShowChatList(false);
+                          }}
+                        >
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editingTitle}
+                              onChange={(e) =>
+                                setEditingTitle(e.target.value)
+                              }
+                              onBlur={() => {
+                                const trimmedTitle = editingTitle.trim();
+                                if (trimmedTitle || trimmedTitle === "") {
+                                  updateChatMutation.mutate({
+                                    chatId: chat._id,
+                                    body: { title: trimmedTitle },
+                                  });
+                                } else {
+                                  setEditingTitle(chatTitle);
+                                }
+                                setEditingChatId(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.target.blur();
+                                } else if (e.key === "Escape") {
+                                  setEditingTitle(chatTitle);
+                                  setEditingChatId(null);
+                                }
+                              }}
+                              autoFocus
+                              className="chat-title-input"
+                            />
+                          ) : (
+                            <div className="chat-title" onDoubleClick={() => {
+                              setEditingChatId(chat._id);
+                              setEditingTitle(chatTitle);
+                            }}>
+                              {chatTitle}
+                            </div>
+                          )}
+                          {chat.messages.length > 0 && (
+                            <div className="chat-preview">
+                              {chat.messages[
+                                chat.messages.length - 1
+                              ].content.substring(0, 50)}
+                              {chat.messages[chat.messages.length - 1].content.length > 50 ? "..." : ""}
+                            </div>
+                          )}
+                        </button>
+                        <div className="chat-actions">
+                          <button
+                            className="chat-action-btn edit-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingChatId(chat._id);
+                              setEditingTitle(chatTitle);
+                            }}
+                            title={t("edit-title") || "Edit title"}
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              className="edit-icon"
+                            >
+                              <path
+                                d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                              <path
+                                d="M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            className="chat-action-btn delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('Delete button clicked for chat:', chat._id);
+                              handleOpenDeleteModal(chat._id);
+                            }}
+                            title={t("delete-chat") || "Delete chat"}
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              className="delete-icon"
+                            >
+                              <path
+                                d="M3 6h18"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                              />
+                              <path
+                                d="M8 6V4c0-1.1.9-2 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6h18z"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                          </button>
                         </div>
-                      )}
-                    </button>
-                  ))
+                      </div>
+                    );
+                  })
               )}
             </div>
           )}
@@ -1251,10 +1376,29 @@ function AppContent() {
           onClose={() => setToast(null)}
         />
       )}
+      {showDeleteModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>{t("delete-chat-confirm") || "Delete Chat?"}</h3>
+            </div>
+            <div className="modal-body">
+              <p>{t("delete-chat-message") || "Are you sure you want to delete this chat? This action cannot be undone."}</p>
+            </div>
+            <div className="modal-actions">
+              <button className="modal-btn secondary" onClick={handleCancelDelete}>
+                {t("cancel") || "Cancel"}
+              </button>
+              <button className="modal-btn primary" onClick={handleConfirmDelete}>
+                {t("delete") || "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 function App() {
   const queryClient = useMemo(() => new QueryClient(), []);
   return (
@@ -1263,5 +1407,4 @@ function App() {
     </QueryClientProvider>
   );
 }
-
 export default App;
